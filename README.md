@@ -36,8 +36,19 @@ Install model deps (GPU box) with `uv pip install -e ".[model]"`.
 | `FOLDFORGE_GPU_TYPE` | `L40S` |
 
 ## Status
-MVP skeleton: gRPC server + model wrapper interface. `Run` returns `UNIMPLEMENTED`
-until the model integration lands (`src/foldforge_proteinmpnn/model.py`).
+**Mock mode works end to end today.** With `FOLDFORGE_SIDECAR_MOCK=1` (the
+default), the server streams realistic `ProgressEvent` heartbeats and returns a
+valid `RunResult` with synthetic artifact references — so the full
+orchestrator → sidecar gRPC path runs without a GPU. The real ProteinMPNN model lives
+behind the same interface in `src/foldforge_proteinmpnn/model.py`; wiring it on a GPU
+box is the only remaining step (server, streaming, and result handling are done).
+
+```bash
+# run the mock server
+FOLDFORGE_SIDECAR_MOCK=1 python -m foldforge_proteinmpnn.server   # :50062
+# gRPC integration tests (start a real server, drive Run over a channel)
+pytest -q
+```
 
 ## License
 Apache-2.0
