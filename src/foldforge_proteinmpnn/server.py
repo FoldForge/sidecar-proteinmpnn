@@ -60,13 +60,14 @@ def _make_servicer(pb2, pb2_grpc, common_pb2, model):
         return pb2.RunUpdate(progress=ev)
 
     def _build_result(pb2, common_pb2, request, out: RunOutput):
-        n = int(out.metrics.get("count", 1) or 1)
         seqs = [
             pb2.Sequence(
-                fasta=">mock_seq_%d\nMOCKAMINOACIDSEQUENCEPLACEHOLDER" % i,
-                global_score=0.0, seq_recovery=0.0, sample_index=i,
+                fasta=s["fasta"],
+                global_score=s.get("global_score", 0.0),
+                seq_recovery=s.get("seq_recovery", 0.0),
+                sample_index=s.get("sample_index", i),
             )
-            for i in range(n)
+            for i, s in enumerate(out.sequences)
         ]
         return pb2.RunUpdate(result=pb2.RunResult(sequences=seqs))
 

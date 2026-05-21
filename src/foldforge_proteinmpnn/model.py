@@ -17,7 +17,6 @@ tool-specific proto ``RunResult``.
 """
 from __future__ import annotations
 
-import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 
@@ -27,10 +26,13 @@ class RunOutput:
     """Normalized result the server maps onto the proto RunResult.
 
     ``artifacts`` is a list of dicts with keys: uri, content_type, size_bytes,
-    sha256. ``metrics`` carries tool-specific scalars (plddt, scores, ...).
+    sha256. ``sequences`` (ProteinMPNN) is a list of dicts with keys: fasta,
+    global_score, seq_recovery, sample_index. ``metrics`` carries tool-specific
+    scalars (plddt, scores, ...).
     """
 
     artifacts: list[dict] = field(default_factory=list)
+    sequences: list[dict] = field(default_factory=list)
     metrics: dict = field(default_factory=dict)
 
 
@@ -73,11 +75,17 @@ class MockModel:
 
         count = int(params.get("num_sequences", 8) or 8)
         count = max(1, count)
-        artifacts = [
-            _artifact(
-                f"r2://{self._bucket}/mock/proteinmpnn/{uuid.uuid4().hex}.fasta",
-                "text/x-fasta",
-            )
-            for _ in range(count)
+        # Synthesize designed sequences with varied (descending-quality) scores so
+        # downstream "pick the best sequence" selection is actually exercised.
+        sequences = [
+            {
+                "fasta": ">design_%d score=%.3f\nMKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ" % (i, 0.8 + 0.05 * i),
+                "global_score": round(0.8 + 0.05 * i, 3),  # lower = better; index 0 best
+                "seq_recovery": round(0.62 - 0.02 * i, 3),
+                "sample_index": i,
+            }
+            for i in range(count)
         ]
-        yield RunOutput(artifacts=artifacts, metrics={"mock": True, "count": count})
+        yield RunOutput(
+            sequences=sequences, metrics={"mock": True, "count": count}
+        )
