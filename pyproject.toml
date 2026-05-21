@@ -1,0 +1,42 @@
+[project]
+name = "foldforge-sidecar-proteinmpnn"
+version = "0.1.0"
+description = "FoldForge gRPC sidecar: ProteinMPNN (inverse folding — sequence design for a fixed backbone)"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+dependencies = [
+  "grpcio>=1.66",
+  "grpcio-tools>=1.66",
+  "protobuf>=5.27",
+  "pydantic>=2.7",
+  "structlog>=24.1",
+]
+
+[project.optional-dependencies]
+# Heavy model deps are isolated so the gRPC layer can be developed/tested
+# without a GPU. Install with: uv pip install -e ".[model]"
+model = [
+  "torch",
+  "numpy",
+]
+dev = [
+  "pytest>=8",
+  "ruff>=0.6",
+  "mypy>=1.11",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+# Generated gRPC stubs are not linted.
+extend-exclude = ["**/gen/**"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/foldforge_proteinmpnn"]
