@@ -77,9 +77,25 @@ class MockModel:
         count = max(1, count)
         # Synthesize designed sequences with varied (descending-quality) scores so
         # downstream "pick the best sequence" selection is actually exercised.
+        # Each design also gets a few residues mutated by index so the sequences
+        # are genuinely distinct (not N copies of one string) — closer to real
+        # ProteinMPNN output and avoids the UI looking buggy.
+        base = "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ"
+        substitutions = "AGSTVLIDEKR"
+
+        def mutate(seq: str, idx: int) -> str:
+            chars = list(seq)
+            # Mutate `idx` positions (monotonic, no modulo wraparound) so every
+            # design index yields a distinct string — idx 0 stays the reference.
+            for k in range(idx):
+                pos = (idx * 7 + k * 11) % len(chars)
+                chars[pos] = substitutions[(idx + k) % len(substitutions)]
+            return "".join(chars)
+
         sequences = [
             {
-                "fasta": ">design_%d score=%.3f\nMKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ" % (i, 0.8 + 0.05 * i),
+                "fasta": ">design_%d score=%.3f\n%s"
+                % (i, 0.8 + 0.05 * i, mutate(base, i)),
                 "global_score": round(0.8 + 0.05 * i, 3),  # lower = better; index 0 best
                 "seq_recovery": round(0.62 - 0.02 * i, 3),
                 "sample_index": i,
