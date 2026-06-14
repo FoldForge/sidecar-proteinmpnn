@@ -10,6 +10,13 @@ dependencies = [
   "protobuf>=5.27",
   "pydantic>=2.7",
   "structlog>=24.1",
+  # For local dev, `pip install -e ../foldforge-pylib` first; the editable
+  # install satisfies this same requirement. Provides foldforge_storage (to
+  # DOWNLOAD the upstream backbone PDB the real model folds) + foldforge_subprocess
+  # (the shared cancellable GPU-subprocess runner, DEBT #M2). Earlier this sidecar
+  # took no storage dep because it only emits FASTA; the real model needs the
+  # store to fetch its backbone input (see DEBT #6).
+  "foldforge-storage @ git+ssh://git@github.com/FoldForge/foldforge-pylib.git@v0.2.0",
 ]
 
 [project.optional-dependencies]

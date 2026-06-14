@@ -29,6 +29,7 @@ if str(_GEN) not in sys.path:
     sys.path.insert(0, str(_GEN))
 
 from .config import settings  # noqa: E402
+from .proteinmpnn import RunCancelled  # noqa: E402
 from .model import MockModel, RunOutput, ProteinMPNNModel  # noqa: E402
 
 log = structlog.get_logger()
@@ -74,6 +75,17 @@ def _make_servicer(pb2, pb2_grpc, common_pb2, model):
     class Servicer(getattr(pb2_grpc, "ProteinMPNNServiceServicer")):
         def Run(self, request, context):  # noqa: N802 (grpc naming)
             params = _params_from_request(request)
+            # Real model needs the backbone PDB artifact URI (a message-typed
+            # field skipped by _params_from_request) + omit_aas. Cooperative
+            # cancel (DEBT #M2): should_cancel trips on client cancel/disconnect.
+            params["backbone_uri"] = request.backbone_pdb.uri if request.HasField("backbone_pdb") else ""
+            params["omit_aas"] = list(request.omit_aas)
+            params["should_cancel"] = lambda: not context.is_active()
+            params["cancel_poll_interval_s"] = settings.cancel_poll_interval_s
+            params["cancel_grace_period_s"] = settings.cancel_grace_period_s
+            params["mock_step_delay_s"] = float(
+                os.environ.get("FOLDFORGE_MOCK_STEP_DELAY_S", "0") or 0
+            )
             try:
                 final = None
                 for item in model.run(params):
@@ -85,6 +97,11 @@ def _make_servicer(pb2, pb2_grpc, common_pb2, model):
                 if final is None:
                     final = RunOutput()
                 yield _build_result(pb2, common_pb2, request, final)
+            except RunCancelled:
+                # Client cancelled / disconnected and the subprocess was killed.
+                # Stop quietly — a cancel is not a failure, and the client is gone.
+                log.info("sidecar.run_cancelled")
+                return
             except NotImplementedError as e:
                 yield pb2.RunUpdate(
                     error=common_pb2.ErrorDetail(code="UNIMPLEMENTED", message=str(e), retryable=False)

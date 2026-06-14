@@ -61,3 +61,30 @@ def test_get_capabilities(channel):
     stub = getattr(pb2_grpc, "ProteinMPNNServiceStub")(channel)
     caps = stub.GetCapabilities(empty_pb2.Empty())
     assert "mock" in caps.model_version
+
+
+def test_client_cancel_stops_the_run(channel, monkeypatch):
+    # DEBT #M2: a client that cancels mid-run must cause the sidecar to stop —
+    # should_cancel (context.is_active()) trips, the model raises RunCancelled,
+    # and the stream ends without a result. The server forwards
+    # FOLDFORGE_MOCK_STEP_DELAY_S into the mock so each stage sleeps, giving a
+    # window to cancel after the first progress frame arrives.
+    monkeypatch.setenv("FOLDFORGE_MOCK_STEP_DELAY_S", "0.3")
+    pb2, pb2_grpc = _stubs()
+    stub = getattr(pb2_grpc, "ProteinMPNNServiceStub")(channel)
+    call = stub.Run(pb2.RunRequest(num_sequences=4))
+    got_progress = False
+    cancelled = False
+    for u in call:
+        if u.WhichOneof("event") == "progress":
+            got_progress = True
+            call.cancel()
+            break
+    try:
+        for _ in call:
+            pass
+    except grpc.RpcError as e:
+        cancelled = e.code() == grpc.StatusCode.CANCELLED
+    assert got_progress
+    assert cancelled
+
