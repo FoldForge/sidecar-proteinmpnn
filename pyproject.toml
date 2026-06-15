@@ -16,7 +16,7 @@ dependencies = [
   # (the shared cancellable GPU-subprocess runner, DEBT #M2). Earlier this sidecar
   # took no storage dep because it only emits FASTA; the real model needs the
   # store to fetch its backbone input (see DEBT #6).
-  "foldforge-storage @ git+ssh://git@github.com/FoldForge/foldforge-pylib.git@v0.2.0",
+  "foldforge-storage @ git+ssh://git@github.com/FoldForge/foldforge-pylib.git@v0.3.0",
 ]
 
 [project.optional-dependencies]

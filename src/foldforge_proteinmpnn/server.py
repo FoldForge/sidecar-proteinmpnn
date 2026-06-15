@@ -29,6 +29,7 @@ if str(_GEN) not in sys.path:
     sys.path.insert(0, str(_GEN))
 
 from .config import settings  # noqa: E402
+from foldforge_trace import bind_trace_id, unbind_trace_id  # noqa: E402
 from .proteinmpnn import RunCancelled  # noqa: E402
 from .model import MockModel, RunOutput, ProteinMPNNModel  # noqa: E402
 
@@ -74,7 +75,18 @@ def _make_servicer(pb2, pb2_grpc, common_pb2, model):
 
     class Servicer(getattr(pb2_grpc, "ProteinMPNNServiceServicer")):
         def Run(self, request, context):  # noqa: N802 (grpc naming)
+            # Distributed trace (DEBT #M5): bind the orchestrator-forwarded
+            # trace-id so every log line in this RPC shares the gateway's id.
+            _tid = bind_trace_id(context)
+            try:
+                yield from self._run(request, context)
+            finally:
+                unbind_trace_id(_tid)
+
+        def _run(self, request, context):
             params = _params_from_request(request)
+            # One structured line per run so the trace-id (DEBT #M5) is visible.
+            log.info("sidecar.run", service="ProteinMPNNService")
             # Real model needs the backbone PDB artifact URI (a message-typed
             # field skipped by _params_from_request) + omit_aas. Cooperative
             # cancel (DEBT #M2): should_cancel trips on client cancel/disconnect.
