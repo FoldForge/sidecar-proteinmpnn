@@ -132,10 +132,20 @@ def parse_proteinmpnn_fasta(text: str) -> ProteinMPNNResult:
     # Skip record 0 (native). Parse the sampled designs.
     designs: list[DesignedSequence] = []
     for header, seq in records[1:]:
+        # A record with no sequence body is truncated/corrupt output (e.g. the
+        # tool crashed mid-write). Skip it rather than hand an empty FASTA to a
+        # downstream fold step, which would silently fold nothing.
+        if not seq:
+            continue
         gm = _GLOBAL_RE.search(header) or _SCORE_RE.search(header)
         rm = _RECOVERY_RE.search(header)
         sm = _SAMPLE_RE.search(header)
-        global_score = float(gm.group(1)) if gm else 0.0
+        # global_score is a mean negative-log-likelihood: always > 0, lower is
+        # better. If the header has no parseable score, default to +inf (NOT 0.0)
+        # so a malformed/scoreless record sorts LAST — never picked as the "best"
+        # design ahead of records that actually scored well. 0.0 would be below
+        # the real range and wrongly rank the bad record first.
+        global_score = float(gm.group(1)) if gm else float("inf")
         seq_recovery = float(rm.group(1)) if rm else 0.0
         sample_index = int(sm.group(1)) if sm else len(designs)
         designs.append(

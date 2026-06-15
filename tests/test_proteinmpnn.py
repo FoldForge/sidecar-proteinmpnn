@@ -80,6 +80,41 @@ def test_parse_empty_when_only_native():
     assert result.sequences == []
 
 
+def test_scoreless_record_ranks_last_not_first():
+    # A sampled record whose header has no parseable global_score must NOT be
+    # treated as score 0.0 (below the real >0 NLL range), which would rank it
+    # FIRST and feed a scoreless design to the downstream fold as the "best".
+    # It should default to +inf and sort LAST.
+    fa = (
+        ">native, global_score=1.5000\nMKTAY\n"
+        ">T=0.1, sample=1, global_score=1.1000, seq_recovery=0.6\nAAAAA\n"
+        ">T=0.1, sample=2 (no score field at all)\nCCCCC\n"
+        ">T=0.1, sample=3, global_score=0.9000, seq_recovery=0.7\nGGGGG\n"
+    )
+    result = parse_proteinmpnn_fasta(fa)
+    assert len(result.sequences) == 3
+    # Best real score first, scoreless (+inf) last.
+    assert result.sequences[0].global_score == 0.9
+    assert result.sequences[1].global_score == 1.1
+    assert result.sequences[2].global_score == float("inf")
+    assert "CCCCC" in result.sequences[2].fasta  # the scoreless one is last
+    assert [s.sample_index for s in result.sequences] == [0, 1, 2]
+
+
+def test_parse_skips_empty_sequence_records():
+    # A header with no sequence body (truncated/crashed output) must not emit an
+    # empty FASTA to the downstream fold step.
+    fa = (
+        ">native, global_score=1.5\nMKTAY\n"
+        ">T=0.1, sample=1, global_score=1.0, seq_recovery=0.6\nMKTAA\n"
+        ">T=0.1, sample=2, global_score=0.8, seq_recovery=0.7\n"  # no sequence line
+    )
+    result = parse_proteinmpnn_fasta(fa)
+    assert len(result.sequences) == 1
+    assert result.sequences[0].global_score == 1.0
+    assert all(s.fasta.split("\n", 1)[1].strip() for s in result.sequences)
+
+
 def test_run_proteinmpnn_raises_without_entrypoint(tmp_path, monkeypatch):
     monkeypatch.setattr("shutil.which", lambda _name: None)
     with pytest.raises(RuntimeError) as ei:
