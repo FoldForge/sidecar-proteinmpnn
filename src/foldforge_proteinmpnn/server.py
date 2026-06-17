@@ -118,6 +118,18 @@ def _make_servicer(pb2, pb2_grpc, common_pb2, model):
                 yield pb2.RunUpdate(
                     error=common_pb2.ErrorDetail(code="UNIMPLEMENTED", message=str(e), retryable=False)
                 )
+            except ValueError as e:
+                # Input validation failure (e.g. missing required param). This is a
+                # client error: it will fail identically on every retry, so map it to
+                # INVALID_ARGUMENT and retryable=False rather than letting it fall into
+                # the generic INTERNAL/retryable=True below (which makes the
+                # orchestrator burn GPU retrying a request that can never succeed).
+                log.warning("sidecar.invalid_argument", error=str(e))
+                yield pb2.RunUpdate(
+                    error=common_pb2.ErrorDetail(
+                        code="INVALID_ARGUMENT", message=str(e), retryable=False
+                    )
+                )
             except Exception as e:  # pragma: no cover - defensive
                 log.error("sidecar.run_error", error=str(e))
                 yield pb2.RunUpdate(
