@@ -1,0 +1,52 @@
+# syntax=docker/dockerfile:1
+#
+# GPU image for REAL ProteinMPNN inference. The default `Dockerfile` stays slim +
+# GPU-free for dev/CI; this one is used on a rented GPU box. See docs/GPU-DEPLOY.md.
+#
+# Build (on the GPU box, with the proto submodule populated):
+#   docker build -f Dockerfile.gpu -t foldforge/proteinmpnn:gpu .
+# Run (NVIDIA Container Toolkit required; R2/object-store creds REQUIRED in real
+# mode — ProteinMPNN fetches its input backbone artifact from the store):
+#   docker run --gpus all -e FOLDFORGE_SIDECAR_MOCK=0 \
+#     -e FOLDFORGE_R2_ENDPOINT=... -e AWS_ACCESS_KEY_ID=... -e AWS_SECRET_ACCESS_KEY=... \
+#     -p 50062:50062 foldforge/proteinmpnn:gpu
+#
+# NOTE: the proto/ submodule must be populated before build (gen_proto.sh needs the
+# .proto files): `git submodule update --init --recursive`, or copy a sibling checkout.
+#
+# STATUS: this is a build template assembled from docs/GPU-DEPLOY.md's real install
+# steps. It has NOT yet been built on a GPU box — pin the ProteinMPNN commit + the
+# torch CUDA wheel once a build is confirmed (same reproducibility lesson as af2).
+
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS base
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3.11 python3-pip python3.11-venv git ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python
+
+# --- ProteinMPNN: clone the repo (ships its own weights) + put the runner on PATH.
+# The model is light: a small torch model, no MSA. The repo bundles
+# vanilla_model_weights/ and soluble_model_weights/, so no separate weight download.
+RUN git clone --depth 1 https://github.com/dauparas/ProteinMPNN.git /opt/ProteinMPNN
+ENV PATH="/opt/ProteinMPNN:${PATH}"
+
+# Torch with CUDA. Pin to the CUDA wheel index matching the base image's CUDA (12.x).
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu124
+
+WORKDIR /app
+
+# gRPC layer + parsing + storage backend (boto3 — ProteinMPNN MUST fetch its input
+# backbone artifact from the object store in real mode). grpcio-tools for gen_proto.sh.
+COPY pyproject.toml .
+RUN pip install --no-cache-dir grpcio grpcio-tools protobuf pydantic structlog && \
+    pip install --no-cache-dir -e ".[model,storage]"
+
+COPY . .
+RUN ./scripts/gen_proto.sh
+
+EXPOSE 50062
+# Real model selected at RUN time via FOLDFORGE_SIDECAR_MOCK=0 (unset = mock, so a
+# misconfigured run fails safe to mock rather than erroring).
+ENTRYPOINT ["python", "-m", "foldforge_proteinmpnn.server"]
